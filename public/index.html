@@ -28,8 +28,9 @@ ul{padding:0;list-style:none;margin:0}table{width:100%;border-collapse:collapse;
 <div class="r"><div><small>Tolls per 100 km</small><input id="tl" value="0"></div><div><small>Value of 1 hour (your currency)</small><input id="vt" value="15"></div></div>
 <h2>Convert currency</h2><div class="r"><div><small>Rate: 1 <b id="fromc">EUR</b> =</small><input id="rt" value="4.2"></div><div><small>into</small><select id="cur2"><option>EUR</option><option selected>PLN</option><option>USD</option><option>GBP</option><option>CHF</option><option>CZK</option><option>SEK</option><option>NOK</option><option>CAD</option></select></div></div><button id="cv" style="margin-top:4px">Convert my numbers</button><small id="rn"></small><br><small>Converts fuel price, tolls and value of 1 hour, then switches the currency.</small><br><small>Higher "value of 1 hour" favours the faster route; 0 favours the cheapest. Tolls are your own estimate (OSRM gives none).</small>
 <div class="r"><div><small>Stop time (min)</small><input id="sv" value="30"></div><div><small>Currency</small><select id="cur"><option>EUR</option><option>PLN</option><option>USD</option><option>GBP</option><option>CHF</option><option>CZK</option><option>SEK</option><option>NOK</option><option>CAD</option></select></div></div>
+<div class="r"><div><small>Max driving hours per day (0 = no limit)</small><input id="md" value="8"></div><div><small>Hotel per night</small><input id="hn" value="0"></div></div>
 <button class="p" id="go" style="margin-top:10px">Plan best trip</button>
-<div id="sum"></div><table id="it"></table>
+<div id="sum"></div><table id="it"></table><h2>Day by day</h2><div id="days"></div>
 </aside><div id="map"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
@@ -49,14 +50,14 @@ function drawT(){const T=getT(),box=$("trips"),k=Object.keys(T);box.innerHTML=""
 function openT(name){applyT(getT()[name],name)}
 function applyT(t,name){if(!t||!Array.isArray(t.P)||!t.P.every(p=>isFinite(+p.lat)&&isFinite(+p.lon)))return alert("This trip file is not valid.");
  P=t.P.map(p=>({name:String(p.name),lat:+p.lat,lon:+p.lon}));show();
- ["lc","fp","tl","vt","sv"].forEach(i=>{if(t.s&&t.s[i]!=null)$(i).value=t.s[i]});
+ ["lc","fp","tl","vt","sv","hn","md"].forEach(i=>{if(t.s&&t.s[i]!=null)$(i).value=t.s[i]});
  if(t.s&&t.s.cur){$("cur").value=t.s.cur;$("fromc").textContent=t.s.cur;upd()}
  $("st").value=t.start<P.length?t.start:0;$("sum").textContent="";$("it").innerHTML="";$("tn").value=name||t.name||""}
 $("svt").onclick=()=>{const name=$("tn").value.trim();if(!name)return alert("Type a name for the trip.");if(!P.length)return alert("Add some stops first.");
- const t=getT();if(t[name]&&!confirm('Replace saved trip "'+name+'"?'))return;const s={};["lc","fp","tl","vt","sv"].forEach(i=>s[i]=$(i).value);s.cur=$("cur").value;
+ const t=getT();if(t[name]&&!confirm('Replace saved trip "'+name+'"?'))return;const s={};["lc","fp","tl","vt","sv","hn","md"].forEach(i=>s[i]=$(i).value);s.cur=$("cur").value;
  t[name]={P:P.map(p=>({name:p.name,lat:p.lat,lon:p.lon})),start:+$("st").value,s};if(putT(t))drawT()};
 $("ex").onclick=()=>{if(!P.length)return alert("Add some stops first.");const name=$("tn").value.trim()||"trip",s={};
- ["lc","fp","tl","vt","sv"].forEach(i=>s[i]=$(i).value);s.cur=$("cur").value;
+ ["lc","fp","tl","vt","sv","hn","md"].forEach(i=>s[i]=$(i).value);s.cur=$("cur").value;
  const data={app:"roadtrip-planner",version:1,name,P:P.map(p=>({name:p.name,lat:p.lat,lon:p.lon})),start:+$("st").value,s};
  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
  a.download=name.replace(/[\\\/:*?"<>|]+/g,"_")+".json";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
@@ -68,7 +69,7 @@ let RT=null;
 fetch("/api/rates").then(r=>r.text()).then(t=>{let d;try{d=JSON.parse(t)}catch(e){throw "old server still running - restart node server.js"}if(d.error)throw d.error;RT=d;upd()}).catch(e=>{$("rn").textContent="Could not load official rates ("+e+"). Enter the rate by hand."});
 function upd(){const a=$("cur").value,b=$("cur2").value;if(RT&&RT.rates[a]&&RT.rates[b]){$("rt").value=(RT.rates[b]/RT.rates[a]).toFixed(4);$("rn").textContent="Official ECB rate, "+RT.date+(RT.source&&RT.source!="ECB"?" (via backup source)":"")+"."}else if(RT)$("rn").textContent="No ECB rate for this pair - enter it by hand."}
 $("cur2").onchange=upd;
-$("cv").onclick=()=>{const r=n("rt"),to=$("cur2").value;if(r<=0)return alert("Enter an exchange rate above 0.");if(to==$("cur").value)return alert("Choose a different currency in the 'into' box.");["fp","tl","vt"].forEach(i=>$(i).value=+(n(i)*r).toFixed(2));$("cur").value=to;$("cur").onchange()};
+$("cv").onclick=()=>{const r=n("rt"),to=$("cur2").value;if(r<=0)return alert("Enter an exchange rate above 0.");if(to==$("cur").value)return alert("Choose a different currency in the 'into' box.");["fp","tl","vt","hn"].forEach(i=>$(i).value=+(n(i)*r).toFixed(2));$("cur").value=to;$("cur").onchange()};
 $("cur").onchange=()=>{$("fromc").textContent=$("cur").value;upd();if($("sum").textContent.includes(" km"))$("go").click()};
 $("q").onkeydown=e=>{if(e.key=="Enter")$("sb").click()};
 map.on("click",e=>{const nm=prompt("Name for this stop?");if(nm){P.push({name:nm,lat:e.latlng.lat,lon:e.latlng.lng});show()}});
@@ -87,6 +88,14 @@ function solve(w,s){const N=w.length,o=[...Array(N).keys()].filter(i=>i!=s),m=o.
  const cost=t=>t.slice(1).reduce((a,x,i)=>a+w[t[i]][x],0);let t=[s];const u=new Set(t);
  while(t.length<N){const l=t.at(-1);let bb=-1;o.forEach(x=>{if(!u.has(x)&&(bb<0||w[l][x]<w[l][bb]))bb=x});u.add(bb);t.push(bb)}t.push(s);
  for(let imp=true;imp;){imp=false;for(let i=1;i<t.length-2;i++)for(let j=i+1;j<t.length-1;j++){const c=[...t.slice(0,i),...t.slice(i,j+1).reverse(),...t.slice(j+1)];if(cost(c)<cost(t)-1e-9){t=c;imp=true}}}return t}
+const esc=x=>String(x).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function split(t,km,hours,lim){const L=lim>0?Math.max(lim,1):1e9,nd=()=>({h:0,km:0,parts:[],night:""}),days=[];let d=nd();
+ for(let k=0;k<t.length-1;k++){const a=P[t[k]].name,b=P[t[k+1]].name,H=hours[t[k]][t[k+1]],K=km[t[k]][t[k+1]];let left=H;
+  if(d.h>0&&left>L-d.h&&(left<=L||L-d.h<0.5)){d.night=a;days.push(d);d=nd()}
+  while(left>L-d.h+1e-9){const take=L-d.h;if(take>1e-9){d.h+=take;d.km+=K*take/H;d.parts.push(a+" → "+b+" (part)")}
+   d.night="on the road between "+a+" and "+b;days.push(d);d=nd();left-=take}
+  d.h+=left;d.km+=K*left/H;d.parts.push(left<H-1e-9?"continue to "+b:a+" → "+b)}
+ days.push(d);return days}
 const fmt=h=>{const m=Math.round(h*60);return Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m"};
 $("go").onclick=async()=>{if(P.length<3)return alert("Add at least 3 stops.");$("sum").textContent="Calculating…";
  try{const {km,hours}=await post("/api/table",P),fuel=n("lc")/100*n("fp"),toll=n("tl")/100,vt=n("vt");
@@ -99,5 +108,7 @@ $("go").onclick=async()=>{if(P.length<3)return alert("Add at least 3 stops.");$(
   t.slice(1).forEach((b,k)=>{const a=t[k],d=km[a][b],h=hours[a][b];D+=d;H+=h;rows+=`<tr><td>${k+1}</td><td></td><td>${d.toFixed(0)}</td><td>${fmt(h)}</td><td>${money(d).toFixed(2)}</td></tr>`});
   $("it").innerHTML=rows;[...$("it").rows].slice(1).forEach((r,k)=>r.cells[1].textContent=P[t[k]].name+" → "+P[t[k+1]].name);
   H+=n("sv")*(P.length-1)/60;
-  $("sum").textContent=`${D.toFixed(0)} km · ${fmt(H)} · fuel+tolls ${money(D).toFixed(2)} ${$("cur").value}`}catch(e){$("sum").textContent="Error: "+e}};
+  const dy=split(t,km,hours,n("md")),nights=dy.length-1,hot=nights*n("hn"),cu=$("cur").value;
+  $("days").innerHTML=dy.map((x,i)=>`<div style="margin-bottom:8px"><b>Day ${i+1}</b> - ${fmt(x.h)} driving, ${x.km.toFixed(0)} km<br>${x.parts.map(esc).join("<br>")}<br><small>${i<nights?"Overnight: "+esc(x.night):"Back at start"}</small></div>`).join("");
+  $("sum").textContent=`${dy.length} day${dy.length>1?"s":""} · ${D.toFixed(0)} km · ${fmt(H)} · fuel+tolls ${money(D).toFixed(2)} ${cu}`+(hot?` · hotels ${hot.toFixed(2)} ${cu} · total ${(money(D)+hot).toFixed(2)} ${cu}`:"")}catch(e){$("sum").textContent="Error: "+e}};
 </script></body></html>
