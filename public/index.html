@@ -1,0 +1,103 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Road Trip Planner</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+body{margin:0;font:14px system-ui,sans-serif;display:grid;grid-template-columns:340px 1fr;height:100vh}
+@media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:auto 55vh}}
+aside{padding:12px;overflow:auto;border-right:1px solid #ccc}
+h1{font-size:18px;margin:0 0 8px}h2{font-size:12px;text-transform:uppercase;color:#667;margin:14px 0 4px}
+input,select,button{font:inherit;padding:6px;width:100%;box-sizing:border-box;margin:2px 0}
+.r{display:flex;gap:6px}.r>*{flex:1;min-width:0}
+button.p{background:#c0392b;color:#fff;border:0;border-radius:6px;padding:9px;font-weight:600;cursor:pointer}
+.res div{padding:5px;border-bottom:1px solid #ddd;cursor:pointer}.res div:hover{background:#eee}
+li{display:flex;justify-content:space-between;padding:2px 0}li button{width:auto;border:0;background:none;cursor:pointer}
+ul{padding:0;list-style:none;margin:0}table{width:100%;border-collapse:collapse;font-size:12px}td,th{border-bottom:1px solid #ddd;padding:3px;text-align:left}
+#map{height:100%}#sum{font-weight:600;margin:6px 0}small{color:#667}
+</style></head><body>
+<aside>
+<h1>🚗 Road Trip Planner</h1>
+<div class="r"><input id="q" placeholder="Search a city, e.g. Kraków"><button id="sb" style="width:70px">Find</button></div>
+<div class="res" id="res"></div>
+<h2>Saved trips</h2><div class="r"><input id="tn" placeholder="Trip name, e.g. Poland tour"><button id="svt" style="width:70px">Save</button></div><div class="r" style="margin-top:4px"><button id="ex">Export trip</button><button id="im">Import trip</button></div><input type="file" id="fi" accept=".json,application/json" hidden>
+<ul id="trips"></ul>
+<h2>Stops</h2><ul id="list"></ul>
+<label>Start / finish</label><select id="st"></select>
+<h2>Costs</h2>
+<div class="r"><div><small>Fuel use L/100km</small><input id="lc" value="7"></div><div><small>Fuel price per litre</small><input id="fp" value="1.6"></div></div>
+<div class="r"><div><small>Tolls per 100 km</small><input id="tl" value="0"></div><div><small>Value of 1 hour (your currency)</small><input id="vt" value="15"></div></div>
+<h2>Convert currency</h2><div class="r"><div><small>Rate: 1 <b id="fromc">EUR</b> =</small><input id="rt" value="4.2"></div><div><small>into</small><select id="cur2"><option>EUR</option><option selected>PLN</option><option>USD</option><option>GBP</option><option>CHF</option><option>CZK</option><option>SEK</option><option>NOK</option><option>CAD</option></select></div></div><button id="cv" style="margin-top:4px">Convert my numbers</button><small id="rn"></small><br><small>Converts fuel price, tolls and value of 1 hour, then switches the currency.</small><br><small>Higher "value of 1 hour" favours the faster route; 0 favours the cheapest. Tolls are your own estimate (OSRM gives none).</small>
+<div class="r"><div><small>Stop time (min)</small><input id="sv" value="30"></div><div><small>Currency</small><select id="cur"><option>EUR</option><option>PLN</option><option>USD</option><option>GBP</option><option>CHF</option><option>CZK</option><option>SEK</option><option>NOK</option><option>CAD</option></select></div></div>
+<button class="p" id="go" style="margin-top:10px">Plan best trip</button>
+<div id="sum"></div><table id="it"></table>
+</aside><div id="map"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const $=i=>document.getElementById(i),n=i=>parseFloat($(i).value)||0;
+let P=[],layer=L.layerGroup(),map=L.map("map").setView([50,15],4);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(map);layer.addTo(map);
+const post=(u,b)=>fetch(u,{method:"POST",body:JSON.stringify(b)}).then(r=>r.json()).then(d=>{if(d.error)throw d.error;return d});
+$("sb").onclick=async()=>{const r=await fetch("/api/geocode?q="+encodeURIComponent($("q").value)).then(r=>r.json());
+ $("res").innerHTML="";r.forEach(x=>{const d=document.createElement("div");d.textContent=x.name+(x.type?"  ["+x.type+"]":"");d.onclick=()=>{P.push({name:x.name.split(",")[0],lat:x.lat,lon:x.lon});$("res").innerHTML="";$("q").value="";show()};$("res").append(d)});
+ if(!r.length)$("res").textContent="Nothing found"};
+const KEY="roadtrips",getT=()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}};
+const putT=o=>{try{localStorage.setItem(KEY,JSON.stringify(o));return true}catch(e){alert("This browser does not allow saving.");return false}};
+function drawT(){const T=getT(),box=$("trips"),k=Object.keys(T);box.innerHTML="";if(!k.length){box.innerHTML="<small>No saved trips yet.</small>";return}
+ k.forEach(name=>{const l=document.createElement("li"),sp=document.createElement("span"),d=document.createElement("div"),o=document.createElement("button"),x=document.createElement("button");
+  sp.textContent=name+" ("+T[name].P.length+" stops)";o.textContent="Open";o.onclick=()=>openT(name);x.textContent="✕";
+  x.onclick=()=>{if(confirm('Delete saved trip "'+name+'"?')){const t=getT();delete t[name];putT(t);drawT()}};d.style.display="flex";d.append(o,x);l.append(sp,d);box.append(l)})}
+function openT(name){applyT(getT()[name],name)}
+function applyT(t,name){if(!t||!Array.isArray(t.P)||!t.P.every(p=>isFinite(+p.lat)&&isFinite(+p.lon)))return alert("This trip file is not valid.");
+ P=t.P.map(p=>({name:String(p.name),lat:+p.lat,lon:+p.lon}));show();
+ ["lc","fp","tl","vt","sv"].forEach(i=>{if(t.s&&t.s[i]!=null)$(i).value=t.s[i]});
+ if(t.s&&t.s.cur){$("cur").value=t.s.cur;$("fromc").textContent=t.s.cur;upd()}
+ $("st").value=t.start<P.length?t.start:0;$("sum").textContent="";$("it").innerHTML="";$("tn").value=name||t.name||""}
+$("svt").onclick=()=>{const name=$("tn").value.trim();if(!name)return alert("Type a name for the trip.");if(!P.length)return alert("Add some stops first.");
+ const t=getT();if(t[name]&&!confirm('Replace saved trip "'+name+'"?'))return;const s={};["lc","fp","tl","vt","sv"].forEach(i=>s[i]=$(i).value);s.cur=$("cur").value;
+ t[name]={P:P.map(p=>({name:p.name,lat:p.lat,lon:p.lon})),start:+$("st").value,s};if(putT(t))drawT()};
+$("ex").onclick=()=>{if(!P.length)return alert("Add some stops first.");const name=$("tn").value.trim()||"trip",s={};
+ ["lc","fp","tl","vt","sv"].forEach(i=>s[i]=$(i).value);s.cur=$("cur").value;
+ const data={app:"roadtrip-planner",version:1,name,P:P.map(p=>({name:p.name,lat:p.lat,lon:p.lon})),start:+$("st").value,s};
+ const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
+ a.download=name.replace(/[\\\/:*?"<>|]+/g,"_")+".json";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$("im").onclick=()=>$("fi").click();
+$("fi").onchange=()=>{const f=$("fi").files[0];if(!f)return;const r=new FileReader();
+ r.onload=()=>{try{applyT(JSON.parse(r.result))}catch(e){alert("This file is not a valid trip file.")}$("fi").value=""};r.readAsText(f)};
+drawT();
+let RT=null;
+fetch("/api/rates").then(r=>r.text()).then(t=>{let d;try{d=JSON.parse(t)}catch(e){throw "old server still running - restart node server.js"}if(d.error)throw d.error;RT=d;upd()}).catch(e=>{$("rn").textContent="Could not load official rates ("+e+"). Enter the rate by hand."});
+function upd(){const a=$("cur").value,b=$("cur2").value;if(RT&&RT.rates[a]&&RT.rates[b]){$("rt").value=(RT.rates[b]/RT.rates[a]).toFixed(4);$("rn").textContent="Official ECB rate, "+RT.date+(RT.source&&RT.source!="ECB"?" (via backup source)":"")+"."}else if(RT)$("rn").textContent="No ECB rate for this pair - enter it by hand."}
+$("cur2").onchange=upd;
+$("cv").onclick=()=>{const r=n("rt"),to=$("cur2").value;if(r<=0)return alert("Enter an exchange rate above 0.");if(to==$("cur").value)return alert("Choose a different currency in the 'into' box.");["fp","tl","vt"].forEach(i=>$(i).value=+(n(i)*r).toFixed(2));$("cur").value=to;$("cur").onchange()};
+$("cur").onchange=()=>{$("fromc").textContent=$("cur").value;upd();if($("sum").textContent.includes(" km"))$("go").click()};
+$("q").onkeydown=e=>{if(e.key=="Enter")$("sb").click()};
+map.on("click",e=>{const nm=prompt("Name for this stop?");if(nm){P.push({name:nm,lat:e.latlng.lat,lon:e.latlng.lng});show()}});
+function show(){$("list").innerHTML="";P.forEach((p,i)=>{const l=document.createElement("li");l.innerHTML=`<span>${i+1}. </span>`;l.children[0].append(p.name);const b=document.createElement("button");b.textContent="✕";b.onclick=()=>{P.splice(i,1);show()};l.append(b);$("list").append(l)});
+ const c=$("st").value;$("st").innerHTML="";P.forEach((p,i)=>$("st").add(new Option(p.name,i)));$("st").value=c<P.length?c:0;
+ layer.clearLayers();P.forEach(p=>L.marker([p.lat,p.lon]).bindTooltip(p.name).addTo(layer));
+ if(P.length)map.fitBounds(P.map(p=>[p.lat,p.lon]),{padding:[40,40],maxZoom:10})}
+// Exact Held-Karp up to 13 other stops; nearest-neighbour + 2-opt above. Works with asymmetric road data.
+function solve(w,s){const N=w.length,o=[...Array(N).keys()].filter(i=>i!=s),m=o.length;
+ if(m<=13){const S=1<<m,dp=new Float64Array(S*m).fill(Infinity),pa=new Int8Array(S*m).fill(-1);
+  for(let j=0;j<m;j++)dp[(1<<j)*m+j]=w[s][o[j]];
+  for(let M=1;M<S;M++)for(let j=0;j<m;j++){const v=dp[M*m+j];if(v==Infinity||!(M>>j&1))continue;
+   for(let k=0;k<m;k++){if(M>>k&1)continue;const M2=M|1<<k,nv=v+w[o[j]][o[k]];if(nv<dp[M2*m+k]){dp[M2*m+k]=nv;pa[M2*m+k]=j}}}
+  let F=S-1,b=Infinity,bj=0;for(let j=0;j<m;j++){const v=dp[F*m+j]+w[o[j]][s];if(v<b){b=v;bj=j}}
+  const q=[];let M=F,j=bj;while(j>=0){q.push(o[j]);const pj=pa[M*m+j];M^=1<<j;j=pj}return[s,...q.reverse(),s]}
+ const cost=t=>t.slice(1).reduce((a,x,i)=>a+w[t[i]][x],0);let t=[s];const u=new Set(t);
+ while(t.length<N){const l=t.at(-1);let bb=-1;o.forEach(x=>{if(!u.has(x)&&(bb<0||w[l][x]<w[l][bb]))bb=x});u.add(bb);t.push(bb)}t.push(s);
+ for(let imp=true;imp;){imp=false;for(let i=1;i<t.length-2;i++)for(let j=i+1;j<t.length-1;j++){const c=[...t.slice(0,i),...t.slice(i,j+1).reverse(),...t.slice(j+1)];if(cost(c)<cost(t)-1e-9){t=c;imp=true}}}return t}
+const fmt=h=>{const m=Math.round(h*60);return Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m"};
+$("go").onclick=async()=>{if(P.length<3)return alert("Add at least 3 stops.");$("sum").textContent="Calculating…";
+ try{const {km,hours}=await post("/api/table",P),fuel=n("lc")/100*n("fp"),toll=n("tl")/100,vt=n("vt");
+  const money=d=>d*(fuel+toll),w=km.map((r,i)=>r.map((d,j)=>i==j?0:money(d)+hours[i][j]*vt));
+  const t=solve(w,+$("st").value),g=await post("/api/route",t.map(i=>P[i]));
+  layer.clearLayers();const line=L.geoJSON(g,{style:{color:"#c0392b",weight:5}}).addTo(layer);
+  t.slice(0,-1).forEach((i,k)=>L.marker([P[i].lat,P[i].lon],{icon:L.divIcon({className:"",html:`<div style="background:#c0392b;color:#fff;border-radius:50%;width:24px;height:24px;line-height:24px;text-align:center;font-weight:700">${k+1}</div>`})}).bindTooltip(P[i].name).addTo(layer));
+  map.fitBounds(line.getBounds(),{padding:[30,30]});
+  let D=0,H=0,rows="<tr><th>#</th><th>Leg</th><th>km</th><th>Time</th><th>"+$("cur").value+"</th></tr>";
+  t.slice(1).forEach((b,k)=>{const a=t[k],d=km[a][b],h=hours[a][b];D+=d;H+=h;rows+=`<tr><td>${k+1}</td><td></td><td>${d.toFixed(0)}</td><td>${fmt(h)}</td><td>${money(d).toFixed(2)}</td></tr>`});
+  $("it").innerHTML=rows;[...$("it").rows].slice(1).forEach((r,k)=>r.cells[1].textContent=P[t[k]].name+" → "+P[t[k+1]].name);
+  H+=n("sv")*(P.length-1)/60;
+  $("sum").textContent=`${D.toFixed(0)} km · ${fmt(H)} · fuel+tolls ${money(D).toFixed(2)} ${$("cur").value}`}catch(e){$("sum").textContent="Error: "+e}};
+</script></body></html>
